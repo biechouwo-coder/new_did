@@ -19,7 +19,7 @@ print("=" * 80)
 df = pd.read_excel('CEADs_最终数据集_2007-2019_V2_插值版_带DID_treat.xlsx')
 
 # 定义匹配变量（协变量）
-covariates = ['ln_pgdp', 'ln_pop_density', 'industrial_advanced', 'fdi_openness', 'financial_development']
+covariates = ['ln_pgdp', 'ln_pop_density', 'industrial_advanced', 'ln_fdi_openness', 'financial_development']
 
 print(f"\n匹配变量（协变量）:")
 for i, var in enumerate(covariates, 1):
