@@ -90,9 +90,10 @@ for year in years:
     print(f"处理组倾向得分: 均值={pscores_treated.mean():.4f}, 标准差={pscores_treated.std():.4f}")
     print(f"对照组倾向得分: 均值={pscores_control.mean():.4f}, 标准差={pscores_control.std():.4f}")
 
-    # ========== 步骤2: 执行近邻匹配 (1:1 with replacement & caliper) ==========
+    # ========== 步骤2: 执行近邻匹配 (1:2 with replacement & caliper) ==========
     print("\n[步骤2] 执行改进的近邻匹配...")
     print("  - 有放回匹配 (With Replacement)")
+    print("  - 1:2匹配 (每个处理组匹配2个对照组)")
     print("  - 卡尺限制 (Caliper = 0.05)")
     print("  - 使用NearestNeighbors算法")
 
@@ -105,39 +106,49 @@ for year in years:
     pscores_treated_2d = pscores_treated.reshape(-1, 1)
 
     # 使用NearestNeighbors找到最近的邻居
-    # n_neighbors=1 表示1:1匹配
-    nbrs = NearestNeighbors(n_neighbors=1, algorithm='ball_tree')
+    # n_neighbors=2 表示1:2匹配
+    nbrs = NearestNeighbors(n_neighbors=2, algorithm='ball_tree')
     nbrs.fit(pscores_control_2d)
 
-    # 找到每个处理组样本的最近邻居
+    # 找到每个处理组样本的2个最近邻居
     distances, indices = nbrs.kneighbors(pscores_treated_2d)
 
     # 应用卡尺限制
     matched_pairs = []
     discarded_count = 0
 
-    for i, (dist, idx) in enumerate(zip(distances.flatten(), indices.flatten())):
-        if dist <= CALIPER:  # 只有在卡尺范围内才匹配
-            matched_pairs.append({
-                'treated_idx': i,
-                'control_idx': idx,
-                'treated_pscore': pscores_treated[i],
-                'control_pscore': pscores_control[idx],
-                'distance': dist
-            })
-        else:
+    for i in range(len(pscores_treated)):
+        # 检查该处理组的2个候选对照组是否都在卡尺范围内
+        valid_matches = 0
+        for j in range(2):  # 2个邻居
+            dist = distances[i][j]
+            idx = indices[i][j]
+            if dist <= CALIPER:
+                matched_pairs.append({
+                    'treated_idx': i,
+                    'control_idx': idx,
+                    'treated_pscore': pscores_treated[i],
+                    'control_pscore': pscores_control[idx],
+                    'distance': dist
+                })
+                valid_matches += 1
+
+        # 如果2个候选都不满足卡尺要求，则丢弃该处理组样本
+        if valid_matches == 0:
             discarded_count += 1
 
-    n_matched = len(matched_pairs)
-    match_rate = n_matched / n_treated * 100
+    n_matched_units = len([p['treated_idx'] for p in matched_pairs])
+    n_unique_treated = len(set([p['treated_idx'] for p in matched_pairs]))
+    match_rate = n_unique_treated / n_treated * 100
 
     print(f"\n匹配结果统计:")
     print(f"  处理组总数: {n_treated}")
-    print(f"  成功匹配: {n_matched}")
+    print(f"  成功匹配的处理组: {n_unique_treated}")
+    print(f"  匹配产生的对照组样本数: {len(matched_pairs)}")
     print(f"  因超出卡尺被丢弃: {discarded_count}")
     print(f"  匹配成功率: {match_rate:.2f}%")
 
-    if n_matched == 0:
+    if n_unique_treated == 0:
         print(f"警告：年份 {year} 没有成功匹配的样本，跳过该年")
         continue
 
