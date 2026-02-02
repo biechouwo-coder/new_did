@@ -23,12 +23,6 @@ wheels/
 .installed.cfg
 *.egg
 
-# 结果文件（大型文件）
-*.xlsx
-*.png
-*.jpg
-*.jpeg
-
 # IDE
 .vscode/
 .idea/
@@ -40,5 +34,5 @@ wheels/
 .DS_Store
 Thumbs.db
 
-# Claude
+# Claude (optional - comment out if you want to include)
 .claude/
