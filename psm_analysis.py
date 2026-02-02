@@ -2,7 +2,7 @@
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sklearn.calibration import CalibratedClassifierCV
+from sklearn.neighbors import NearestNeighbors
 from scipy import stats
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
@@ -90,36 +90,52 @@ for year in years:
     print(f"处理组倾向得分: 均值={pscores_treated.mean():.4f}, 标准差={pscores_treated.std():.4f}")
     print(f"对照组倾向得分: 均值={pscores_control.mean():.4f}, 标准差={pscores_control.std():.4f}")
 
-    # ========== 步骤2: 执行近邻匹配 (1:1) ==========
-    print("\n[步骤2] 执行1:1近邻匹配...")
+    # ========== 步骤2: 执行近邻匹配 (1:1 with replacement & caliper) ==========
+    print("\n[步骤2] 执行改进的近邻匹配...")
+    print("  - 有放回匹配 (With Replacement)")
+    print("  - 卡尺限制 (Caliper = 0.05)")
+    print("  - 使用NearestNeighbors算法")
 
-    # 为每个处理组样本找到倾向得分最接近的对照组样本
+    # 设置卡尺（caliper）- 只有倾向得分差异小于此值才允许匹配
+    CALIPER = 0.05
+
+    # 使用NearestNeighbors算法进行有放回匹配
+    # 重塑倾向得分为二维数组
+    pscores_control_2d = pscores_control.reshape(-1, 1)
+    pscores_treated_2d = pscores_treated.reshape(-1, 1)
+
+    # 使用NearestNeighbors找到最近的邻居
+    # n_neighbors=1 表示1:1匹配
+    nbrs = NearestNeighbors(n_neighbors=1, algorithm='ball_tree')
+    nbrs.fit(pscores_control_2d)
+
+    # 找到每个处理组样本的最近邻居
+    distances, indices = nbrs.kneighbors(pscores_treated_2d)
+
+    # 应用卡尺限制
     matched_pairs = []
-    control_used = set()
+    discarded_count = 0
 
-    for i, ps_treated in enumerate(pscores_treated):
-        # 计算与所有未使用的对照组样本的距离
-        distances = np.abs(pscores_control - ps_treated)
-
-        # 标记已使用的对照组样本
-        for j in control_used:
-            distances[j] = np.inf
-
-        # 找到最近的对照组样本
-        nearest_j = np.argmin(distances)
-
-        if distances[nearest_j] < np.inf:  # 确保找到匹配
+    for i, (dist, idx) in enumerate(zip(distances.flatten(), indices.flatten())):
+        if dist <= CALIPER:  # 只有在卡尺范围内才匹配
             matched_pairs.append({
                 'treated_idx': i,
-                'control_idx': nearest_j,
-                'treated_pscore': ps_treated,
-                'control_pscore': pscores_control[nearest_j],
-                'distance': distances[nearest_j]
+                'control_idx': idx,
+                'treated_pscore': pscores_treated[i],
+                'control_pscore': pscores_control[idx],
+                'distance': dist
             })
-            control_used.add(nearest_j)
+        else:
+            discarded_count += 1
 
     n_matched = len(matched_pairs)
-    print(f"成功匹配对数: {n_matched} / {n_treated}")
+    match_rate = n_matched / n_treated * 100
+
+    print(f"\n匹配结果统计:")
+    print(f"  处理组总数: {n_treated}")
+    print(f"  成功匹配: {n_matched}")
+    print(f"  因超出卡尺被丢弃: {discarded_count}")
+    print(f"  匹配成功率: {match_rate:.2f}%")
 
     if n_matched == 0:
         print(f"警告：年份 {year} 没有成功匹配的样本，跳过该年")
@@ -132,9 +148,26 @@ for year in years:
     treated_matched = treated.iloc[matched_treated_indices].copy()
     control_matched = control.iloc[matched_control_indices].copy()
 
-    # 为匹配的对照组样本赋予权重
+    # 计算权重（有放回匹配：一个对照组可能匹配多个处理组）
+    # 统计每个对照组样本被使用的次数
+    from collections import Counter
+    control_usage = Counter(matched_control_indices)
+
+    # 为处理组赋予权重（总是1.0）
     treated_matched['weight'] = 1.0
-    control_matched['weight'] = 1.0
+
+    # 为对照组赋予权重（1 / 被使用次数）
+    control_matched['weight'] = control_matched.index.map(
+        lambda idx: 1.0 / control_usage.get(control.index.get_loc(idx), 1)
+    )
+
+    print(f"\n权重分配统计:")
+    print(f"  对照组唯一样本数: {len(control_usage)}")
+    print(f"  对照组重复使用情况:")
+    # 显示重复使用的对照组样本
+    usage_counts = Counter(control_usage.values())
+    for usage, count in sorted(usage_counts.items()):
+        print(f"    被使用{usage}次: {count}个样本")
 
     # ========== 步骤3: 平衡性检验 ==========
     print("\n[步骤3] 平衡性检验...")
