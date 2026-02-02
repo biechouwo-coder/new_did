@@ -93,11 +93,11 @@ for year in years:
     # ========== 步骤2: 执行近邻匹配 (1:1 with replacement & caliper) ==========
     print("\n[步骤2] 执行改进的近邻匹配...")
     print("  - 有放回匹配 (With Replacement)")
-    print("  - 卡尺限制 (Caliper = 0.05)")
+    print("  - 卡尺限制 (Caliper = 0.02)")
     print("  - 使用NearestNeighbors算法")
 
     # 设置卡尺（caliper）- 只有倾向得分差异小于此值才允许匹配
-    CALIPER = 0.05
+    CALIPER = 0.02
 
     # 使用NearestNeighbors算法进行有放回匹配
     # 重塑倾向得分为二维数组
